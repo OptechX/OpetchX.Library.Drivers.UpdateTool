@@ -1,0 +1,52 @@
+name: "tagged-release"
+
+on:
+  push:
+    tags:
+      - "v*"
+ 
+jobs:
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 7.0.x
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --no-restore
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
+    - name: Publish
+      run: dotnet publish -r linux-x64 -c Release /p:PublishSingleFile=true --self-contained
+
+  release:
+    name: "Release"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 7.0.x
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --no-restore
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
+    - name: Publish
+      run: dotnet publish -r linux-x64 -c Release /p:PublishSingleFile=true --self-contained
+    - name: "GH Release"
+      run: |
+        TAG=${GITHUB_REF#refs/tags/}
+        zip ./oxldut.zip ./OptechX.Library.Drivers.UpdateTool/bin/Release/net7.0/linux-x64/publish/oxldut            
+        gh release create $TAG ./oxldut.zip --notes $TAG
+      env:
+        GITHUB_TOKEN: ${{ github.TOKEN }}
+      shell: bash
