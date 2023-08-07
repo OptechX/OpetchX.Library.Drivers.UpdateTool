@@ -12,7 +12,7 @@ namespace OptechX.Library.Drivers.UpdateTool
         {
             if (args.Any(arg => arg.Contains("--version")))
             {
-                Console.WriteLine("Version: 1.0.0");
+                Console.WriteLine("Version: 1.0.1");
                 return;
             }
 

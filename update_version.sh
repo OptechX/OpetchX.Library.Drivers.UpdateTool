@@ -7,7 +7,7 @@ version=$(head -n 1 version_info)
 escaped_version=$(printf '%s\n' "$version" | sed -e 's/[\/&]/\\&/g')
 
 # Replace the version number in Program.cs with the value from version_info file
-sed -i "s/Console.WriteLine(\"Version: [0-9.]\+\");/Console.WriteLine(\"Version: $escaped_version\");/" ./OptechX.Library.Drivers.UpdateTool/Program.cs
+gsed -i "s/Console.WriteLine(\"Version: [0-9.]\+\");/Console.WriteLine(\"Version: $escaped_version\");/" ./OptechX.Library.Drivers.UpdateTool/Program.cs
 
 # Run the commands in order
 git add .
