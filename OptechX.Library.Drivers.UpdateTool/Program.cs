@@ -1,9 +1,7 @@
-﻿using System.Globalization;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using CsvHelper;
-using CsvHelper.Configuration;
+using Microsoft.VisualBasic.FileIO;
 using OptechX.Library.Drivers.UpdateTool.Models;
 
 namespace OptechX.Library.Drivers.UpdateTool
@@ -94,20 +92,39 @@ namespace OptechX.Library.Drivers.UpdateTool
                         _ => "Windows 11"
                     };
 
-                    using (var reader = new StreamReader(csvFilePath))
-                    using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)))
+                    Console.WriteLine($"Windows Version: {windowsVersion}");
+                    Console.WriteLine($"OEM: {oem}");
+
+                    // start main work here
+                    using (TextFieldParser parser = new(csvFilePath))
                     {
-                        // Read the header and ignore it
-                        csv.ReadHeader();
+                        parser.TextFieldType = FieldType.Delimited;
+                        parser.SetDelimiters(",");
 
-                        // Read records and map to a class or dictionary
-                        while (csv.Read())
+                        while (!parser.EndOfData)
                         {
-                            // Using a dictionary to map the CSV data
-                            var record = csv.GetRecord<dynamic>() as IDictionary<string, object>;
-                            Console.WriteLine($"Make: {record!["Make"]}, Model: {record!["Model"]}, Updated: {record!["Updated"]}");
+                            string[] columns = parser.ReadFields()!;
+                            string make;
+                            string model;
+                            string updated;
+                            try
+                            {
+                                make = columns[0];
+                                model = columns[1];
+                                updated = columns[2];    
+                            }
+                            catch
+                            {
+                                continue;
+                            }
+                            if (make == "Make" && model == "Model" && updated == "Updated")
+                            {
+                                continue;
+                            }
 
-                            string thisUid = $"{oem}::{record!["Make"]}::{record!["Model"]}";
+                            Console.WriteLine($"Make: {make}, Model: {model}, Updated: {updated}");
+
+                            string thisUid = $"{oem}::{make}::{model}";
 
                             // Define the pattern for characters to be replaced
                             string pattern = @"[^a-zA-Z_0-9:]";
@@ -123,16 +140,20 @@ namespace OptechX.Library.Drivers.UpdateTool
                                 Id = 0,
                                 UID = thisUid,
                                 LastUpdated = DateTime.UtcNow,
-                                Make = (string)record!["Make"],
-                                Model = (string)record!["Model"],
+                                Make = make,
+                                Model = model,
                                 Oem = oem,
                                 SupportedWinRelease = new List<string>() { windowsVersion },
                             };
+
+                            Console.WriteLine($"Check: {apiEndpoint}/api/DriverCore/uid/{thisUid}");
 
                             try
                             {
                                 HttpResponseMessage response = await httpClient.GetAsync($"{apiEndpoint}/api/DriverCore/uid/{thisUid}");
                                 response.EnsureSuccessStatusCode();
+
+                                Console.WriteLine($"Found UID: {thisDriverCore.UID}");
 
                                 // read the response as a string
                                 string responseContent = await response.Content.ReadAsStringAsync();
@@ -146,10 +167,23 @@ namespace OptechX.Library.Drivers.UpdateTool
                                     continue;
                                 }
 
-                                DateTime dateTimeLastUpdated = DateTime.ParseExact((string)record!["Updated"], "MM/dd/yyyy", null);
+                                if (drivers.Count < 1)
+                                {
+                                    Console.WriteLine("Less than 1 driverCore error, needs to be investigated");
+                                    continue;
+                                }
 
-                                DriverCore uDriverCore = drivers[0];
-                                uDriverCore.LastUpdated = dateTimeLastUpdated;
+                                DateTime dateTimeLastUpdated = DateTime.ParseExact(updated, "MM/dd/yyyy", null);
+
+                                DriverCore uDriverCore = new DriverCore()
+                                {
+                                    Id = drivers[0].Id,
+                                    UID = thisUid,
+                                    Oem = oem,
+                                    Make = make,
+                                    Model = model,
+                                    LastUpdated = dateTimeLastUpdated,
+                                };
                                 uDriverCore.AddNewSupportedWinRelease(thisDriverCore);
 
                                 string apiUpdateDriverCoreUrl = $"{apiEndpoint}/api/DriverCore/{uDriverCore.Id}";
@@ -157,20 +191,38 @@ namespace OptechX.Library.Drivers.UpdateTool
                                 try
                                 {
                                     HttpResponseMessage updateResponse = await httpClient.PutAsync(apiUpdateDriverCoreUrl, new StringContent(JsonSerializer.Serialize(uDriverCore), Encoding.UTF8, "application/json"));
-                                    updateResponse.EnsureSuccessStatusCode();
-                                    Console.ForegroundColor = ConsoleColor.Green;
-                                    Console.Write("DriverCore updated: ");
-                                    Console.ForegroundColor = ConsoleColor.Yellow;
-                                    Console.WriteLine(uDriverCore.UID);
-                                    Console.ResetColor();
+                                    
+                                    if (updateResponse.IsSuccessStatusCode)
+                                    {
+                                        Console.ForegroundColor = ConsoleColor.Green;
+                                        Console.Write("DriverCore updated: ");
+                                        Console.ForegroundColor = ConsoleColor.Yellow;
+                                        Console.WriteLine(uDriverCore.UID);
+                                        Console.ResetColor();
+                                    }
+                                    else if (updateResponse.StatusCode == System.Net.HttpStatusCode.NoContent)
+                                    {
+                                        Console.ForegroundColor = ConsoleColor.Green;
+                                        Console.Write("DriverCore updated: ");
+                                        Console.ForegroundColor = ConsoleColor.Yellow;
+                                        Console.WriteLine(uDriverCore.UID);
+                                        Console.ResetColor();
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine($"Error: {updateResponse.StatusCode}");
+                                        Console.WriteLine($"Unable to update DriverCore: {uDriverCore.UID}");
+                                        Console.WriteLine($"uDriverCore: {JsonSerializer.Serialize(uDriverCore)}");
+                                        continue;
+                                    }
                                 }
                                 catch (HttpRequestException ex)
                                 {
                                     Console.WriteLine($"Error: {ex.Message}");
                                     Console.WriteLine($"Unable to update DriverCore: {uDriverCore.UID}");
+                                    Console.WriteLine($"uDriverCore: {JsonSerializer.Serialize(uDriverCore)}");
+                                    continue;
                                 }
-
-                                continue;
                             }
                             catch (Exception ex)
                             {
@@ -191,6 +243,7 @@ namespace OptechX.Library.Drivers.UpdateTool
                                 catch (HttpRequestException ex2)
                                 {
                                     Console.WriteLine($"Error: {ex2.Message}");
+                                    Console.WriteLine(JsonSerializer.Serialize(thisDriverCore));
                                 }
 
                                 continue;
