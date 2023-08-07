@@ -5,159 +5,109 @@ using System.Text.RegularExpressions;
 using Microsoft.VisualBasic.FileIO;
 using OptechX.Library.Drivers.UpdateTool.Models;
 
-namespace OptechX.Library.Drivers.UpdateTool
+namespace OptechX.Library.Drivers.UpdateTool.HP
 {
-    class Program
-    {
-        static async Task Main(string[] args)
-        {
-            if (args.Any(arg => arg.Contains("--version")))
-            {
-                Console.WriteLine("Version: 1.0.2");
-                return;
-            }
+	public static class InjestHP
+	{
+		public static async Task UpdateHP(string csvPath, string ApiEndpoint)
+		{
+			if (!string.IsNullOrEmpty(csvPath))
+			{
+				if (!File.Exists(csvPath))
+				{
+					Console.WriteLine($"CSV file not exists: {csvPath}");
+                    return;
+				}
 
-            if (args.Any(arg => arg.Contains("--help")))
-            {
-                Console.WriteLine("Usage: oxldut [--csv <csv_file>]|[--xml <xml_file>] --oem <oem>");
-                return;
-            }
-
-            if (args.Length != 4)
-            {
-                Console.WriteLine("Usage: oxldut [--csv <csv_file>]|[--xml <xml_file>] --oem <oem>");
-                return;
-            }
-
-            string? csvFilePath = null;
-            string? xmlFilePath = null;
-            string? oem = null;
-            string apiEndpoint = "https://definitely-firm-chamois.ngrok-free.app";
-
-            for (int i = 0; i < args.Length; i++)
-            {
-                if (args[i] == "--csv" && i + 1 < args.Length)
-                {
-                    csvFilePath = args[i + 1];
-                }
-                else if (args[i] == "--xml" && i + 1 < args.Length)
-                {
-                    xmlFilePath = args[i + 1];
-                }
-                else if (args[i] == "--oem" && i + 1 < args.Length)
-                {
-                    oem = args[i + 1];
-                }
-            }
-
-            // Check if both CSV and XML files are specified (optional)
-            if (csvFilePath != null && xmlFilePath != null)
-            {
-                Console.WriteLine("Please provide either a CSV file or an XML file, not both.");
-                return;
-            }
-
-            // Check if CSV or XML file is specified
-            if (csvFilePath == null && xmlFilePath == null)
-            {
-                Console.WriteLine("Please provide either a CSV file or an XML file.");
-                return;
-            }
-
-            // Check if OEM is specified
-            if (oem == null)
-            {
-                Console.WriteLine("Please specify the OEM name using the --oem argument.");
-                return;
-            }
-
-            // Now you have the csvFilePath, xmlFilePath, and oem values.
-            // You can use them in your update tool logic.
-
-            if (oem == "HP")
-            {
-                await HP.InjestHP.UpdateHP(csvPath: csvFilePath!, ApiEndpoint: apiEndpoint);
-            }
-            else
-            {
-                // work with csvFilePath
-                if (!string.IsNullOrEmpty(csvFilePath))
-                {
-                    using (HttpClient httpClient = new HttpClient())
+                using (HttpClient httpClient = new HttpClient())
+				{
+                    // read the CSV from here
+                    using (TextFieldParser parser = new TextFieldParser(csvPath))
                     {
-                        if (!File.Exists(csvFilePath))
+                        parser.TextFieldType = FieldType.Delimited;
+                        parser.SetDelimiters(",");
+
+                        while (!parser.EndOfData)
                         {
-                            Console.WriteLine($"CSV file not exist: {csvFilePath}");
-                            return;
-                        }
-
-                        // set windows version
-                        string windowsVersion = csvFilePath switch
-                        {
-                            var s when s.Contains("win10") => "Windows 10",
-                            var s when s.Contains("win11") => "Windows 11",
-                            _ => "Windows 11"
-                        };
-
-                        Console.WriteLine($"Windows Version: {windowsVersion}");
-                        Console.WriteLine($"OEM: {oem}");
-
-                        // start main work here
-                        using (TextFieldParser parser = new(csvFilePath))
-                        {
-                            parser.TextFieldType = FieldType.Delimited;
-                            parser.SetDelimiters(",");
-
-                            while (!parser.EndOfData)
+                            string[] columns = parser.ReadFields()!;
+                            string make;
+                            string series;
+                            string model;
+                            string win7;
+                            string win8;
+                            string win10;
+                            string win11;
+                            try
                             {
-                                string[] columns = parser.ReadFields()!;
-                                string make;
-                                string model;
-                                string updated;
-                                try
-                                {
-                                    make = columns[0];
-                                    model = columns[1];
-                                    updated = columns[2];    
-                                }
-                                catch
-                                {
-                                    continue;
-                                }
-                                if (make == "Make" && model == "Model" && updated == "Updated")
-                                {
-                                    continue;
-                                }
+                                make = columns[0];
+                                series = columns[1];
+                                model = columns[2];
+                                win7 = columns[3];
+                                win8 = columns[4];
+                                win10 = columns[5];
+                                win11 = columns[6];
+                            }
+                            catch
+                            {
+                                Console.WriteLine("Incorrect columns in HP CSV");
+                                return;
+                            }
 
-                                Console.WriteLine($"Make: {make}, Model: {model}, Updated: {updated}");
+                            if (make == "Make")
+                            {
+                                continue;
+                            }
 
-                                string thisUid = $"{oem}::{make}::{model}";
+                            string thisUid = $"{make}::{series}::{model}";
 
-                                // Define the pattern for characters to be replaced
-                                string pattern = @"[^a-zA-Z_0-9:]";
+                            // Define the pattern for characters to be replaced
+                            string pattern = @"[^a-zA-Z_0-9:]";
 
-                                // Replace spaces with underscores
-                                thisUid = thisUid.Replace(" ", "_");
+                            // Replace spaces with underscores
+                            thisUid = thisUid.Replace(" ", "_");
 
-                                // Replace characters that match the pattern with an empty string
-                                thisUid = Regex.Replace(thisUid, pattern, "");
+                            // Replace characters that match the pattern with an empty string
+                            thisUid = Regex.Replace(thisUid, pattern, "");
 
+                            List<DriverCore> theseDriverCores = new List<DriverCore>();
+
+                            if (win10 == "Yes")
+                            {
                                 DriverCore thisDriverCore = new()
                                 {
                                     Id = 0,
                                     UID = thisUid,
                                     LastUpdated = DateTime.UtcNow,
-                                    Make = make,
+                                    Make = series,
                                     Model = model,
-                                    Oem = oem,
-                                    SupportedWinRelease = new List<string>() { windowsVersion },
+                                    Oem = make,
+                                    SupportedWinRelease = new List<string>() { "Windows 10" },
                                 };
 
-                                
+                                theseDriverCores.Add(thisDriverCore);
+                            }
 
+                            if (win11 == "Yes")
+                            {
+                                DriverCore thisDriverCore = new()
+                                {
+                                    Id = 0,
+                                    UID = thisUid,
+                                    LastUpdated = DateTime.UtcNow,
+                                    Make = series,
+                                    Model = model,
+                                    Oem = make,
+                                    SupportedWinRelease = new List<string>() { "Windows 11" },
+                                };
+
+                                theseDriverCores.Add(thisDriverCore);
+                            }
+
+                            foreach (DriverCore thisDriverCore in theseDriverCores)
+                            {
                                 try
                                 {
-                                    HttpResponseMessage response = await httpClient.GetAsync($"{apiEndpoint}/api/DriverCore/uid/{thisUid}");
+                                    HttpResponseMessage response = await httpClient.GetAsync($"{ApiEndpoint}/api/DriverCore/uid/{thisDriverCore.UID}");
                                     response.EnsureSuccessStatusCode();
 
                                     Console.WriteLine($"Found UID: {thisDriverCore.UID}");
@@ -180,25 +130,23 @@ namespace OptechX.Library.Drivers.UpdateTool
                                         continue;
                                     }
 
-                                    DateTime dateTimeLastUpdated = DateTime.ParseExact(updated, "MM/dd/yyyy", null);
-
                                     DriverCore uDriverCore = new DriverCore()
                                     {
                                         Id = drivers[0].Id,
                                         UID = thisUid,
-                                        Oem = oem,
+                                        Oem = series,
                                         Make = make,
                                         Model = model,
-                                        LastUpdated = dateTimeLastUpdated,
+                                        LastUpdated = DateTime.UtcNow,
                                     };
                                     uDriverCore.AddNewSupportedWinRelease(thisDriverCore);
 
-                                    string apiUpdateDriverCoreUrl = $"{apiEndpoint}/api/DriverCore/{uDriverCore.Id}";
+                                    string apiUpdateDriverCoreUrl = $"{ApiEndpoint}/api/DriverCore/{uDriverCore.Id}";
 
                                     try
                                     {
                                         HttpResponseMessage updateResponse = await httpClient.PutAsync(apiUpdateDriverCoreUrl, new StringContent(JsonSerializer.Serialize(uDriverCore), Encoding.UTF8, "application/json"));
-                                        
+
                                         if (updateResponse.IsSuccessStatusCode)
                                         {
                                             Console.ForegroundColor = ConsoleColor.Green;
@@ -235,7 +183,7 @@ namespace OptechX.Library.Drivers.UpdateTool
                                 {
                                     Console.WriteLine($"Error: {ex.Message}");
 
-                                    string apiNewDriverCoreUrl = $"{apiEndpoint}/api/DriverCore";
+                                    string apiNewDriverCoreUrl = $"{ApiEndpoint}/api/DriverCore";
 
                                     try
                                     {
@@ -259,7 +207,8 @@ namespace OptechX.Library.Drivers.UpdateTool
                         }
                     }
                 }
-            }
-        }
-    }
+			}
+		}
+	}
 }
+
