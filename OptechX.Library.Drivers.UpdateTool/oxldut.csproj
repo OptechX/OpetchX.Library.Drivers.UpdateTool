@@ -10,10 +10,8 @@
 
   <ItemGroup>
     <None Remove="Models\" />
-    <None Remove="HP\" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Models\" />
-    <Folder Include="HP\" />
   </ItemGroup>
 </Project>

@@ -24,18 +24,6 @@ namespace OptechX.Library.Drivers.UpdateTool.Models
 
         [JsonPropertyName("supportedWinRelease")]
         public List<string>? SupportedWinRelease { get; set; }
-
-        public void AddNewSupportedWinRelease(DriverCore nDriverCore)
-        {
-            if (SupportedWinRelease == null)
-            {
-                SupportedWinRelease = nDriverCore.SupportedWinRelease!.ToList();
-            }
-            else if (nDriverCore.SupportedWinRelease != null)
-            {
-                SupportedWinRelease.AddRange(nDriverCore.SupportedWinRelease.Except(SupportedWinRelease));
-            }
-        }
     }
 }
 
